@@ -394,13 +394,39 @@ Generate all 5 content versions (emotional, direct_sales, reel_caption, whatsapp
       return res.status(502).json({ error: 'AI generation failed, please try again' });
     }
 
-    let parsed;
-    try {
-      const cleanText = aiData.content[0].text.replace(/```json|```/g, '').trim();
-      parsed = JSON.parse(cleanText);
-    } catch (parseErr) {
-      console.error('Failed to parse AI response as JSON:', aiData.content[0].text);
-      return res.status(502).json({ error: 'AI returned an unexpected format, please try again' });
+    let parsed = tryParseAiJson(aiData.content[0].text);
+
+    if (!parsed) {
+      // One automatic retry with a stricter, English-language reminder appended —
+      // this is the most reliable fix for cases where writing in a non-English
+      // script (Tamil/Malayalam/Hindi) caused a stray quote or line break to
+      // slip into the JSON structure.
+      console.warn('First JSON parse failed, retrying once with a stricter prompt...');
+      const retryResponse = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 2500,
+          system: systemPrompt + '\n\nCRITICAL: Your entire reply must be ONE valid JSON object and nothing else. Inside any string value, never use double-quote characters (") — if you need to quote something, rephrase without quotes. Never include literal line breaks inside a string value; use a space instead.',
+          messages: [{ role: 'user', content: userPrompt }]
+        })
+      }).catch(() => null);
+
+      if (retryResponse && retryResponse.ok) {
+        const retryData = await retryResponse.json();
+        if (retryData.content && retryData.content[0] && retryData.content[0].text) {
+          parsed = tryParseAiJson(retryData.content[0].text);
+        }
+      }
+    }
+
+    if (!parsed) {
+      return res.status(502).json({ error: 'AI returned an unexpected format, please try again — this can happen more often with non-English languages, a second attempt usually works.' });
     }
 
     await recordUsage(req.user.id, 'text');
@@ -585,11 +611,8 @@ Generate a full Monday-to-Sunday content posting plan for this week.`;
     if (!aiData.content || !aiData.content[0] || !aiData.content[0].text) {
       return res.status(502).json({ error: 'AI generation failed, please try again' });
     }
-    let days;
-    try {
-      const cleanText = aiData.content[0].text.replace(/```json|```/g, '').trim();
-      days = JSON.parse(cleanText);
-    } catch (parseErr) {
+    const days = tryParseAiJson(aiData.content[0].text);
+    if (!days) {
       return res.status(502).json({ error: 'AI returned an unexpected format, please try again' });
     }
 
@@ -762,6 +785,52 @@ app.post('/api/video/generate',
     }
   }
 );
+
+// Robustly extracts and parses a JSON object OR array from an AI response,
+// even if the model wrapped it in markdown fences or added stray text
+// before/after. Returns null (never throws) if nothing could be recovered.
+function tryParseAiJson(rawText) {
+  if (!rawText) return null;
+
+  // Attempt 1: strip markdown fences, parse as-is.
+  let cleanText = rawText.replace(/```json|```/g, '').trim();
+  try {
+    return JSON.parse(cleanText);
+  } catch (e) { /* fall through */ }
+
+  // Attempt 2: extract just the outermost JSON block — object {...} or
+  // array [...], whichever appears first — in case the model added an
+  // explanation before or after the JSON despite instructions.
+  const firstObj = cleanText.indexOf('{');
+  const firstArr = cleanText.indexOf('[');
+  let openChar, closeChar, firstIdx;
+  if (firstArr !== -1 && (firstObj === -1 || firstArr < firstObj)) {
+    openChar = '['; closeChar = ']'; firstIdx = firstArr;
+  } else {
+    openChar = '{'; closeChar = '}'; firstIdx = firstObj;
+  }
+
+  if (firstIdx !== -1) {
+    const lastIdx = cleanText.lastIndexOf(closeChar);
+    if (lastIdx > firstIdx) {
+      const extracted = cleanText.slice(firstIdx, lastIdx + 1);
+      try {
+        return JSON.parse(extracted);
+      } catch (e) { /* fall through */ }
+
+      // Attempt 3: replace literal newlines/tabs inside the extracted block —
+      // a common cause of breakage when non-English scripts slip in raw
+      // line breaks instead of escaped \n.
+      try {
+        const fixed = extracted.replace(/[\r\n\t]+/g, ' ');
+        return JSON.parse(fixed);
+      } catch (e) { /* fall through */ }
+    }
+  }
+
+  console.error('Could not parse AI response as JSON after all attempts:', rawText.slice(0, 2000));
+  return null;
+}
 
 function cleanupFiles(paths) {
   paths.forEach(p => { try { fs.unlinkSync(p); } catch (e) {} });
