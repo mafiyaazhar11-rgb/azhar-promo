@@ -383,17 +383,6 @@
       <input type="password" id="loginPassword" autocomplete="current-password" required>
       <button type="submit" class="btn-primary" id="loginBtn">Log in</button>
     </form>
-    <div class="setup-toggle">
-      First time here? <a id="showSetup">Create the shared login</a>
-    </div>
-
-    <form id="setupForm" class="hidden" style="margin-top:14px;">
-      <label>Choose a username</label>
-      <input type="text" id="setupUsername" required>
-      <label>Choose a password</label>
-      <input type="password" id="setupPassword" required>
-      <button type="submit" class="btn-primary" id="setupBtn">Create login</button>
-    </form>
   </div>
 </div>
 
@@ -405,6 +394,7 @@
       <button data-tab="generate" class="active">Generate</button>
       <button data-tab="library">Library</button>
       <button data-tab="products">Products</button>
+      <button data-tab="settings">Settings</button>
     </nav>
     <button class="logout-btn" id="logoutBtn">Log out</button>
   </header>
@@ -495,6 +485,22 @@
         <button class="btn-amber" id="addProductBtn">Add product</button>
       </div>
     </section>
+    <!-- ===== SETTINGS TAB ===== -->
+    <section id="tab-settings" class="hidden">
+      <h1 class="page-title">Settings</h1>
+      <p class="page-sub">Change the shared login password.</p>
+
+      <div class="card">
+        <div id="pwError" class="error-msg hidden"></div>
+        <label>Current password</label>
+        <input type="password" id="currentPassword">
+        <label>New password</label>
+        <input type="password" id="newPassword">
+        <label>Confirm new password</label>
+        <input type="password" id="confirmPassword">
+        <button class="btn-amber" id="changePwBtn">Change password</button>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -516,35 +522,6 @@ function showToast(msg){
 }
 
 // ---------- Auth ----------
-document.getElementById('showSetup').addEventListener('click', () => {
-  document.getElementById('setupForm').classList.remove('hidden');
-});
-
-document.getElementById('setupForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const username = document.getElementById('setupUsername').value;
-  const password = document.getElementById('setupPassword').value;
-  const btn = document.getElementById('setupBtn');
-  btn.disabled = true;
-  btn.textContent = 'Creating...';
-  try {
-    const res = await fetch(`${API_URL}/api/auth/setup`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ username, password })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Setup failed');
-    showToast('Login created. You can log in now.');
-    document.getElementById('setupForm').classList.add('hidden');
-    document.getElementById('loginUsername').value = username;
-  } catch (err) {
-    showToast(err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Create login';
-  }
-});
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -870,6 +847,35 @@ function escapeHtml(str){
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+document.getElementById('changePwBtn').addEventListener('click', async () => {
+  const errBox = document.getElementById('pwError');
+  errBox.classList.add('hidden');
+  const current = document.getElementById('currentPassword').value;
+  const newPw = document.getElementById('newPassword').value;
+  const confirm = document.getElementById('confirmPassword').value;
+
+  if (newPw !== confirm) {
+    errBox.textContent = 'New passwords do not match';
+    errBox.classList.remove('hidden');
+    return;
+  }
+  const btn = document.getElementById('changePwBtn');
+  btn.disabled = true;
+  try {
+    await apiCall('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: current, new_password: newPw })
+    });
+    showToast('Password changed');
+    ['currentPassword','newPassword','confirmPassword'].forEach(id => document.getElementById(id).value = '');
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // ---------- Boot ----------
 if (token) {
