@@ -42,28 +42,91 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-before-deploy';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
+// ---------- Startup sanity checks ----------
+// These don't crash the server — they just log clearly so a missing key
+// shows up immediately in Render's logs instead of as a confusing 500
+// later when someone actually tries to use that feature.
+if (!process.env.DATABASE_URL) {
+  console.error('WARNING: DATABASE_URL is not set. Database features will fail.');
+}
+if (!ANTHROPIC_API_KEY) {
+  console.error('WARNING: ANTHROPIC_API_KEY is not set. Content generation will fail.');
+}
+if (!process.env.JWT_SECRET) {
+  console.error('WARNING: JWT_SECRET is not set, using an insecure default. Set this in Render before real use.');
+}
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  console.warn('NOTE: GOOGLE_APPLICATION_CREDENTIALS_JSON is not set. Video voiceover generation will fail until this is added.');
+}
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
+// Surface connection-level failures (e.g. DB temporarily unreachable)
+// clearly in logs rather than letting them crash the process silently.
+pool.on('error', (err) => {
+  console.error('Unexpected database pool error:', err.message);
+});
+
 // ---------- Auth middleware ----------
 function requireAuth(req, res, next) {
   const header = req.headers.authorization;
-  if (!header) return res.status(401).json({ error: 'No token provided' });
+  if (!header) return res.status(401).json({ error: 'You are not logged in. Please log in again.' });
   const token = header.replace('Bearer ', '');
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
+    return res.status(401).json({ error: 'Your session has expired. Please log in again.' });
   }
+}
+
+// Role-gating middleware — use after requireAuth. Admins pass everything;
+// this only blocks roles below the one required.
+const ROLE_RANK = { viewer: 1, editor: 2, admin: 3 };
+function requireRole(minRole) {
+  return (req, res, next) => {
+    const userRole = (req.user && req.user.role) || 'admin'; // existing tokens predate roles; treat as admin
+    if ((ROLE_RANK[userRole] || 0) < ROLE_RANK[minRole]) {
+      return res.status(403).json({ error: `This action requires ${minRole} access.` });
+    }
+    next();
+  };
+}
+
+// ---------- Usage limit enforcement ----------
+async function checkUsageLimit(usageType) {
+  const settingKey = usageType === 'video' ? 'max_video_generations_per_day' : 'max_text_generations_per_day';
+  const settingResult = await pool.query('SELECT value FROM promo_settings WHERE key = $1', [settingKey]);
+  const limit = settingResult.rows.length > 0 ? parseInt(settingResult.rows[0].value) : (usageType === 'video' ? 20 : 100);
+
+  const countResult = await pool.query(
+    `SELECT COUNT(*) FROM promo_usage WHERE usage_type = $1 AND created_at >= CURRENT_DATE`,
+    [usageType]
+  );
+  const usedToday = parseInt(countResult.rows[0].count);
+
+  if (usedToday >= limit) {
+    const error = new Error(`Daily limit reached: ${usedToday}/${limit} ${usageType} generations used today. This resets at midnight, or an admin can raise the limit in Settings.`);
+    error.isLimitError = true;
+    throw error;
+  }
+  return { usedToday, limit };
+}
+
+async function recordUsage(userId, usageType) {
+  await pool.query('INSERT INTO promo_usage (user_id, usage_type) VALUES ($1, $2)', [userId, usageType]);
 }
 
 // ---------- Auth routes ----------
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
     const result = await pool.query('SELECT * FROM promo_users WHERE username = $1', [username]);
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid username or password' });
@@ -73,10 +136,14 @@ app.post('/api/auth/login', async (req, res) => {
     if (!valid) {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
-    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, username: user.username });
+    const role = user.role || 'admin';
+    const token = jwt.sign({ id: user.id, username: user.username, role }, JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token, username: user.username, role });
   } catch (err) {
     console.error('Login error:', err);
+    if (err.code === 'ECONNREFUSED' || err.code === '57P03') {
+      return res.status(503).json({ error: 'Cannot reach the database right now. Please try again shortly.' });
+    }
     res.status(500).json({ error: 'Server error during login' });
   }
 });
@@ -167,6 +234,17 @@ app.delete('/api/products/:id', requireAuth, async (req, res) => {
 // tailored by target audience, marketing angle, and output language.
 app.post('/api/generate', requireAuth, async (req, res) => {
   try {
+    if (!ANTHROPIC_API_KEY) {
+      return res.status(503).json({ error: 'Content generation is not configured yet — the Anthropic API key is missing on the server.' });
+    }
+
+    try {
+      await checkUsageLimit('text');
+    } catch (limitErr) {
+      if (limitErr.isLimitError) return res.status(429).json({ error: limitErr.message });
+      throw limitErr;
+    }
+
     const {
       product_id, platform, content_type, extra_instructions,
       target_audience, marketing_angle, output_language
@@ -224,14 +302,19 @@ app.post('/api/generate', requireAuth, async (req, res) => {
       malayalam_english_mix: 'Write in a natural Malayalam-English mix (Manglish), the way young Malayalam parents actually text and post on social media.'
     };
 
-    const complianceRule = `
+    const complianceRule = product.banned_claims || product.required_disclaimer
+      ? `
+COMPLIANCE RULE FOR THIS PRODUCT — follow this strictly, no exceptions:
+${product.banned_claims ? `Do NOT generate or imply any of these claims: ${product.banned_claims}. If a claim like this is not explicitly supported by the product details given, do not invent it, hint at it, or imply it, even loosely.` : ''}
+${product.allowed_focus ? `Instead, focus only on real, honest value such as: ${product.allowed_focus}.` : ''}
+${product.required_disclaimer ? `Where natural, the content should be consistent with this disclaimer (you do not need to print it verbatim in every version, but never contradict it): "${product.required_disclaimer}"` : ''}`
+      : `
 COMPLIANCE RULE — follow this strictly, no exceptions:
 Do NOT generate claims of guaranteed marks, guaranteed results, "100% result", "CBSE approved",
 "government certified", "certified teachers", or any similar certification/approval/guarantee claim,
-UNLESS that exact fact was explicitly provided to you in the product's details below. If a claim like
-this is not clearly supported by the product details given, do not invent it, hint at it, or imply it,
-even loosely. Focus on real, honest value: convenience, affordability, language support, practice
-opportunities, parent involvement — never fabricated outcomes or certifications.`;
+UNLESS that exact fact was explicitly provided to you in the product's details below. Focus on real,
+honest value: convenience, affordability, language support, practice opportunities, parent involvement
+— never fabricated outcomes or certifications.`;
 
     const systemPrompt = `You are a marketing copywriter helping a solo developer in the UAE promote his Indian education app. Always respond ONLY in valid JSON, no preamble, no markdown fences. The JSON must have this exact shape:
 {
@@ -272,20 +355,38 @@ ${extra_instructions ? 'Extra instructions from the user: ' + extra_instructions
 
 Generate all 5 content versions (emotional, direct_sales, reel_caption, whatsapp_message, ad_copy), 5 hook lines, a hashtag set, a voiceover script meant to be read aloud over real screen-recording footage of the actual app (do not describe a fake UI — keep it generic enough that it works over any real screen recording of this product), and a shot list using the exact 5-beat timed format shown in the JSON shape (Hook / Problem / App demo / Benefit / CTA) describing what to record at each beat.`;
 
-    const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2500,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }]
-      })
-    });
+    let aiResponse;
+    try {
+      aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 2500,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }]
+        })
+      });
+    } catch (networkErr) {
+      console.error('Anthropic API network error:', networkErr);
+      return res.status(502).json({ error: 'Could not reach the AI service. Please check your connection and try again.' });
+    }
+
+    if (!aiResponse.ok) {
+      const errText = await aiResponse.text().catch(() => '');
+      console.error('Anthropic API error:', aiResponse.status, errText);
+      if (aiResponse.status === 401) {
+        return res.status(503).json({ error: 'The Anthropic API key is invalid or missing. Check Render environment variables.' });
+      }
+      if (aiResponse.status === 429) {
+        return res.status(429).json({ error: 'The AI service is rate-limited right now. Please wait a moment and try again.' });
+      }
+      return res.status(502).json({ error: 'The AI service returned an error. Please try again.' });
+    }
 
     const aiData = await aiResponse.json();
     if (!aiData.content || !aiData.content[0] || !aiData.content[0].text) {
@@ -302,6 +403,7 @@ Generate all 5 content versions (emotional, direct_sales, reel_caption, whatsapp
       return res.status(502).json({ error: 'AI returned an unexpected format, please try again' });
     }
 
+    await recordUsage(req.user.id, 'text');
     res.json(parsed);
   } catch (err) {
     console.error('Generate error:', err);
@@ -538,6 +640,17 @@ app.post('/api/video/generate',
     const workDir = path.join(os.tmpdir(), jobId);
 
     try {
+      if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+        return res.status(503).json({ error: 'Video generation is not configured yet — the Google Cloud credentials are missing on the server.' });
+      }
+
+      try {
+        await checkUsageLimit('video');
+      } catch (limitErr) {
+        if (limitErr.isLimitError) return res.status(429).json({ error: limitErr.message });
+        throw limitErr;
+      }
+
       const { voiceover_script, voice_language } = req.body;
       const screenshots = req.files['screenshots'] || [];
       const musicFile = req.files['music'] ? req.files['music'][0] : null;
@@ -549,13 +662,19 @@ app.post('/api/video/generate',
       fs.mkdirSync(workDir, { recursive: true });
 
       // 1. Generate voiceover audio via Google Cloud TTS
-      const client = getTtsClient();
-      const languageCode = voice_language || 'en-IN';
-      const [ttsResponse] = await client.synthesizeSpeech({
-        input: { text: voiceover_script },
-        voice: { languageCode, ssmlGender: 'FEMALE' },
-        audioConfig: { audioEncoding: 'MP3' }
-      });
+      let ttsResponse;
+      try {
+        const client = getTtsClient();
+        const languageCode = voice_language || 'en-IN';
+        [ttsResponse] = await client.synthesizeSpeech({
+          input: { text: voiceover_script },
+          voice: { languageCode, ssmlGender: 'FEMALE' },
+          audioConfig: { audioEncoding: 'MP3' }
+        });
+      } catch (ttsErr) {
+        console.error('Google TTS error:', ttsErr);
+        throw new Error('Voiceover generation failed. Check the Google Cloud credentials and that the Text-to-Speech API is enabled.');
+      }
       const voicePath = path.join(workDir, 'voice.mp3');
       fs.writeFileSync(voicePath, ttsResponse.audioContent, 'binary');
       tempFiles.push(voicePath);
@@ -623,7 +742,8 @@ app.post('/api/video/generate',
         cmd.output(finalVideoPath).on('end', resolve).on('error', reject).run();
       });
 
-      // 7. Send the finished file, then clean up
+      // 7. Record usage, send the finished file, then clean up
+      await recordUsage(req.user.id, 'video');
       res.download(finalVideoPath, 'azhar-promo-video.mp4', () => {
         cleanupFiles(tempFiles);
         fs.rm(workDir, { recursive: true, force: true }, () => {});
@@ -634,7 +754,11 @@ app.post('/api/video/generate',
       console.error('Video generation error:', err);
       cleanupFiles(tempFiles);
       fs.rm(workDir, { recursive: true, force: true }, () => {});
-      res.status(500).json({ error: 'Video generation failed: ' + (err.message || 'unknown error') });
+      if (req.files) {
+        const allFiles = [...(req.files['screenshots'] || []), ...(req.files['music'] || [])];
+        allFiles.forEach(f => fs.unlink(f.path, () => {}));
+      }
+      res.status(500).json({ error: err.message || 'Video generation failed. Please try again.' });
     }
   }
 );
@@ -683,19 +807,60 @@ function formatSrtTime(seconds) {
 }
 
 
-// One-time setup: visit this URL once in your browser to create the database tables
-// AND the single login (username: azhar / password: azhar2026).
-// Safe to visit more than once — it won't create a duplicate user if one already exists.
+// Runs schema.sql (tables + migrations). Safe to visit repeatedly at any
+// time — every statement in schema.sql uses IF NOT EXISTS / ON CONFLICT,
+// so re-running it only adds new tables/columns, never duplicates or
+// destroys existing data. Does NOT create any login — see /api/setup-db below.
+app.get('/api/migrate-db', async (req, res) => {
+  try {
+    const schemaSql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+    await pool.query(schemaSql);
+    res.send(`
+      <div style="font-family:sans-serif;max-width:480px;margin:60px auto;text-align:center;">
+        <h2>Migration complete ✅</h2>
+        <p>Tables and columns are up to date. Your existing data was not touched.</p>
+        <a href="/" style="color:#1f6f6b;font-weight:600;">Go to AZHAR Promo</a>
+      </div>
+    `);
+  } catch (err) {
+    console.error('Migrate-db error:', err);
+    res.status(500).send(`
+      <div style="font-family:sans-serif;max-width:480px;margin:60px auto;">
+        <h2>Migration failed</h2>
+        <pre style="white-space:pre-wrap;background:#fbe9e2;padding:12px;border-radius:8px;">${err.message || err}</pre>
+      </div>
+    `);
+  }
+});
+
+// One-time setup: visit this URL once in your browser to create the database
+// tables AND the single login (username: azhar / password: azhar2026).
+//
+// PERMANENTLY LOCKED after the first user is created — this checks
+// promo_users every time and refuses outright if anyone already exists,
+// with no way to re-trigger it short of deleting the user from the
+// database directly. This is intentional: it is the one thing in this
+// app that must never be runnable twice.
 app.get('/api/setup-db', async (req, res) => {
   try {
     const schemaSql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
     await pool.query(schemaSql);
 
     const existing = await pool.query('SELECT COUNT(*) FROM promo_users');
-    if (parseInt(existing.rows[0].count) === 0) {
-      const hash = await bcrypt.hash('azhar2026', 10);
-      await pool.query('INSERT INTO promo_users (username, password_hash) VALUES ($1, $2)', ['azhar', hash]);
+    if (parseInt(existing.rows[0].count) > 0) {
+      return res.status(403).send(`
+        <div style="font-family:sans-serif;max-width:480px;margin:60px auto;text-align:center;">
+          <h2>Setup already completed 🔒</h2>
+          <p>A login already exists, so this route is permanently locked. If you've
+          forgotten the password, use the Settings tab once logged in, or contact
+          whoever manages this database directly.</p>
+          <a href="/" style="color:#1f6f6b;font-weight:600;">Go to AZHAR Promo</a>
+        </div>
+      `);
     }
+
+    const hash = await bcrypt.hash('azhar2026', 10);
+    await pool.query("INSERT INTO promo_users (username, password_hash, role) VALUES ($1, $2, 'admin')", ['azhar', hash]);
 
     res.send(`
       <div style="font-family:sans-serif;max-width:480px;margin:60px auto;text-align:center;">
@@ -703,6 +868,7 @@ app.get('/api/setup-db', async (req, res) => {
         <p>Tables created, products seeded, and your login is ready.</p>
         <p><b>Username:</b> azhar<br><b>Password:</b> azhar2026</p>
         <p>You can change this password anytime from inside the app once logged in.</p>
+        <p style="color:#a8401f;font-size:13px;">This setup page is now permanently locked and cannot be used again.</p>
         <a href="/" style="color:#1f6f6b;font-weight:600;">Go to AZHAR Promo</a>
       </div>
     `);
@@ -714,6 +880,55 @@ app.get('/api/setup-db', async (req, res) => {
         <pre style="white-space:pre-wrap;background:#fbe9e2;padding:12px;border-radius:8px;">${err.message || err}</pre>
       </div>
     `);
+  }
+});
+
+// ---------- Usage / cost dashboard (admin only) ----------
+app.get('/api/usage', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const textToday = await pool.query(`SELECT COUNT(*) FROM promo_usage WHERE usage_type = 'text' AND created_at >= CURRENT_DATE`);
+    const videoToday = await pool.query(`SELECT COUNT(*) FROM promo_usage WHERE usage_type = 'video' AND created_at >= CURRENT_DATE`);
+    const textMonth = await pool.query(`SELECT COUNT(*) FROM promo_usage WHERE usage_type = 'text' AND created_at >= date_trunc('month', CURRENT_DATE)`);
+    const videoMonth = await pool.query(`SELECT COUNT(*) FROM promo_usage WHERE usage_type = 'video' AND created_at >= date_trunc('month', CURRENT_DATE)`);
+    const settings = await pool.query('SELECT key, value FROM promo_settings');
+    const settingsMap = {};
+    settings.rows.forEach(s => { settingsMap[s.key] = s.value; });
+
+    res.json({
+      text_generations_today: parseInt(textToday.rows[0].count),
+      video_generations_today: parseInt(videoToday.rows[0].count),
+      text_generations_this_month: parseInt(textMonth.rows[0].count),
+      video_generations_this_month: parseInt(videoMonth.rows[0].count),
+      max_text_generations_per_day: parseInt(settingsMap.max_text_generations_per_day || 100),
+      max_video_generations_per_day: parseInt(settingsMap.max_video_generations_per_day || 20)
+    });
+  } catch (err) {
+    console.error('Get usage error:', err);
+    res.status(500).json({ error: 'Could not load usage data' });
+  }
+});
+
+app.put('/api/usage/limits', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { max_text_generations_per_day, max_video_generations_per_day } = req.body;
+    if (max_text_generations_per_day !== undefined) {
+      await pool.query(
+        `INSERT INTO promo_settings (key, value) VALUES ('max_text_generations_per_day', $1)
+         ON CONFLICT (key) DO UPDATE SET value = $1`,
+        [String(max_text_generations_per_day)]
+      );
+    }
+    if (max_video_generations_per_day !== undefined) {
+      await pool.query(
+        `INSERT INTO promo_settings (key, value) VALUES ('max_video_generations_per_day', $1)
+         ON CONFLICT (key) DO UPDATE SET value = $1`,
+        [String(max_video_generations_per_day)]
+      );
+    }
+    res.json({ message: 'Limits updated' });
+  } catch (err) {
+    console.error('Update limits error:', err);
+    res.status(500).json({ error: 'Could not update limits' });
   }
 });
 
