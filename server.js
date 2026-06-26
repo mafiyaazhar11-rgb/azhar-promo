@@ -58,23 +58,29 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// One-time setup route to create the shared login. Disable or remove after first use.
-app.post('/api/auth/setup', async (req, res) => {
+// Change password — requires being logged in already. No public account creation exists.
+app.post('/api/auth/change-password', requireAuth, async (req, res) => {
   try {
-    const existing = await pool.query('SELECT COUNT(*) FROM promo_users');
-    if (parseInt(existing.rows[0].count) > 0) {
-      return res.status(403).json({ error: 'Setup already completed. A user already exists.' });
+    const { current_password, new_password } = req.body;
+    if (!current_password || !new_password) {
+      return res.status(400).json({ error: 'Current and new password are required' });
     }
-    const { username, password } = req.body;
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Username and password required' });
+    if (new_password.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
     }
-    const hash = await bcrypt.hash(password, 10);
-    await pool.query('INSERT INTO promo_users (username, password_hash) VALUES ($1, $2)', [username, hash]);
-    res.json({ message: 'Setup complete. You can now log in.' });
+    const result = await pool.query('SELECT * FROM promo_users WHERE id = $1', [req.user.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+
+    const user = result.rows[0];
+    const valid = await bcrypt.compare(current_password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+
+    const newHash = await bcrypt.hash(new_password, 10);
+    await pool.query('UPDATE promo_users SET password_hash = $1 WHERE id = $2', [newHash, user.id]);
+    res.json({ message: 'Password changed successfully' });
   } catch (err) {
-    console.error('Setup error:', err);
-    res.status(500).json({ error: 'Server error during setup' });
+    console.error('Change password error:', err);
+    res.status(500).json({ error: 'Server error while changing password' });
   }
 });
 
@@ -309,16 +315,26 @@ app.delete('/api/posts/:id', requireAuth, async (req, res) => {
   }
 });
 
-// One-time setup: visit this URL once in your browser to create the database tables.
-// Safe to visit more than once (uses CREATE TABLE IF NOT EXISTS).
+// One-time setup: visit this URL once in your browser to create the database tables
+// AND the single login (username: azhar / password: azhar2026).
+// Safe to visit more than once — it won't create a duplicate user if one already exists.
 app.get('/api/setup-db', async (req, res) => {
   try {
     const schemaSql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
     await pool.query(schemaSql);
+
+    const existing = await pool.query('SELECT COUNT(*) FROM promo_users');
+    if (parseInt(existing.rows[0].count) === 0) {
+      const hash = await bcrypt.hash('azhar2026', 10);
+      await pool.query('INSERT INTO promo_users (username, password_hash) VALUES ($1, $2)', ['azhar', hash]);
+    }
+
     res.send(`
       <div style="font-family:sans-serif;max-width:480px;margin:60px auto;text-align:center;">
-        <h2>Database setup complete ✅</h2>
-        <p>Tables created and your 4 products are seeded. You can go back and create the shared login now.</p>
+        <h2>Setup complete ✅</h2>
+        <p>Tables created, products seeded, and your login is ready.</p>
+        <p><b>Username:</b> azhar<br><b>Password:</b> azhar2026</p>
+        <p>You can change this password anytime from inside the app once logged in.</p>
         <a href="/" style="color:#1f6f6b;font-weight:600;">Go to AZHAR Promo</a>
       </div>
     `);
