@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AZHAR Promo</title>
+<style>
+  :root{
+    --ink:#23211d;
+    --paper:#f7f4ec;
+    --card:#ffffff;
+    --line:#e4dfd0;
+    --teal:#1f6f6b;
+    --teal-deep:#134c49;
+    --amber:#c9762f;
+    --amber-deep:#a85e21;
+    --muted:#73695a;
+    --danger:#a8401f;
+    --radius:12px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Helvetica Neue', Arial, sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    min-height:100vh;
+  }
+  .hidden{display:none !important;}
+
+  /* ---------- Login screen ---------- */
+  #loginScreen{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+  }
+  .login-card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:36px 32px;
+    width:100%;
+    max-width:380px;
+    box-shadow:0 1px 3px rgba(0,0,0,.04);
+  }
+  .login-card .brand{
+    font-family:Georgia, serif;
+    font-size:26px;
+    font-weight:700;
+    color:var(--teal-deep);
+    margin-bottom:4px;
+  }
+  .login-card .tagline{
+    font-size:13px;
+    color:var(--muted);
+    margin-bottom:24px;
+  }
+  input{
+    width:100%;
+    padding:11px 13px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    font-size:14px;
+    margin-bottom:12px;
+    font-family:inherit;
+    background:#fff;
+  }
+  input:focus{
+    outline:2px solid var(--teal);
+    outline-offset:1px;
+  }
+  button{
+    font-family:inherit;
+    cursor:pointer;
+    border:none;
+  }
+  .btn-primary{
+    width:100%;
+    background:var(--teal-deep);
+    color:#fff;
+    padding:12px;
+    border-radius:8px;
+    font-size:14px;
+    font-weight:600;
+  }
+  .btn-primary:hover{background:var(--teal);}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed;}
+  .error-msg{
+    background:#fbe9e2;
+    color:var(--danger);
+    padding:9px 12px;
+    border-radius:6px;
+    font-size:13px;
+    margin-bottom:12px;
+  }
+  .setup-toggle{
+    text-align:center;
+    margin-top:14px;
+    font-size:12.5px;
+    color:var(--muted);
+  }
+  .setup-toggle a{color:var(--teal-deep);text-decoration:underline;cursor:pointer;}
+
+  /* ---------- App shell ---------- */
+  #appShell{min-height:100vh;display:none;}
+  #appShell.active{display:block;}
+
+  header.topbar{
+    background:var(--teal-deep);
+    color:#fff;
+    padding:14px 20px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  header.topbar .brand{
+    font-family:Georgia, serif;
+    font-size:20px;
+    font-weight:700;
+  }
+  nav.tabs{
+    display:flex;
+    gap:6px;
+  }
+  nav.tabs button{
+    background:transparent;
+    color:#cfe6e3;
+    padding:8px 14px;
+    border-radius:7px;
+    font-size:13.5px;
+    font-weight:600;
+  }
+  nav.tabs button.active{
+    background:rgba(255,255,255,.16);
+    color:#fff;
+  }
+  .logout-btn{
+    background:transparent;
+    color:#cfe6e3;
+    font-size:12.5px;
+    text-decoration:underline;
+  }
+
+  main{
+    max-width:920px;
+    margin:0 auto;
+    padding:24px 18px 60px;
+  }
+
+  h1.page-title{
+    font-family:Georgia, serif;
+    font-size:22px;
+    margin:0 0 4px;
+  }
+  p.page-sub{
+    color:var(--muted);
+    font-size:13.5px;
+    margin:0 0 22px;
+  }
+
+  /* ---------- Cards / forms ---------- */
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:20px;
+    margin-bottom:16px;
+  }
+  label{
+    display:block;
+    font-size:12.5px;
+    font-weight:700;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:.03em;
+    margin-bottom:5px;
+    margin-top:14px;
+  }
+  label:first-child{margin-top:0;}
+  select, textarea{
+    width:100%;
+    padding:10px 12px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    font-size:14px;
+    font-family:inherit;
+    background:#fff;
+  }
+  textarea{resize:vertical;min-height:64px;}
+  select:focus, textarea:focus{outline:2px solid var(--teal);outline-offset:1px;}
+
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media (max-width:600px){.row2{grid-template-columns:1fr;}}
+
+  .btn-amber{
+    background:var(--amber);
+    color:#fff;
+    padding:11px 20px;
+    border-radius:8px;
+    font-size:14px;
+    font-weight:600;
+    margin-top:18px;
+  }
+  .btn-amber:hover{background:var(--amber-deep);}
+  .btn-amber:disabled{opacity:.5;cursor:not-allowed;}
+
+  .btn-ghost{
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--ink);
+    padding:8px 14px;
+    border-radius:7px;
+    font-size:13px;
+    font-weight:600;
+  }
+  .btn-ghost:hover{background:var(--paper);}
+
+  .btn-teal-outline{
+    background:transparent;
+    border:1px solid var(--teal);
+    color:var(--teal-deep);
+    padding:8px 14px;
+    border-radius:7px;
+    font-size:13px;
+    font-weight:600;
+  }
+  .btn-teal-outline:hover{background:#e9f3f1;}
+
+  .spinner{
+    display:inline-block;
+    width:14px;height:14px;
+    border:2px solid rgba(255,255,255,.4);
+    border-top-color:#fff;
+    border-radius:50%;
+    animation:spin .7s linear infinite;
+    margin-right:7px;
+    vertical-align:-2px;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* ---------- Generated results ---------- */
+  .result-block{
+    background:#faf7f0;
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px;
+    margin-top:14px;
+  }
+  .result-block h3{
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:var(--teal-deep);
+    margin:0 0 10px;
+  }
+  .caption-option{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:12px;
+    margin-bottom:8px;
+    font-size:14px;
+    line-height:1.55;
+    cursor:pointer;
+    position:relative;
+  }
+  .caption-option.selected{
+    border-color:var(--teal);
+    background:#eef7f5;
+  }
+  .caption-option .pick-badge{
+    position:absolute;
+    top:8px;right:10px;
+    font-size:11px;
+    color:var(--teal-deep);
+    font-weight:700;
+    display:none;
+  }
+  .caption-option.selected .pick-badge{display:block;}
+  .hashtags-text{color:var(--teal-deep);font-weight:600;font-size:13.5px;}
+  .script-text, .shotlist-text{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:12px;
+    font-size:13.5px;
+    line-height:1.6;
+    white-space:pre-wrap;
+  }
+  .copy-btn{
+    font-size:11.5px;
+    color:var(--teal-deep);
+    text-decoration:underline;
+    background:transparent;
+    padding:0;
+    margin-top:6px;
+  }
+
+  /* ---------- Products list ---------- */
+  .product-row{
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:14px 16px;
+    margin-bottom:10px;
+    background:#fff;
+  }
+  .product-row .pname{font-weight:700;font-size:15px;margin-bottom:3px;}
+  .product-row .pdesc{font-size:13px;color:var(--muted);margin-bottom:8px;}
+  .product-row .actions{display:flex;gap:8px;}
+
+  /* ---------- Library ---------- */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+  .filters select{width:auto;flex:0 0 auto;}
+  .post-card{
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:14px 16px;
+    margin-bottom:10px;
+    background:#fff;
+  }
+  .post-card .meta{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    margin-bottom:8px;
+    flex-wrap:wrap;
+  }
+  .pill{
+    font-size:11px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.03em;
+    padding:3px 9px;
+    border-radius:20px;
+  }
+  .pill.product{background:#e9f3f1;color:var(--teal-deep);}
+  .pill.platform{background:#f6e7d8;color:var(--amber-deep);}
+  .pill.draft{background:#eee;color:var(--muted);}
+  .pill.posted{background:#dcf0dc;color:#2a7a2a;}
+  .post-card .cap-preview{font-size:13.5px;line-height:1.5;margin-bottom:8px;}
+  .post-card .actions{display:flex;gap:8px;flex-wrap:wrap;}
+  .empty-state{
+    text-align:center;
+    padding:40px 20px;
+    color:var(--muted);
+    font-size:14px;
+  }
+
+  .toast{
+    position:fixed;
+    bottom:20px;
+    left:50%;
+    transform:translateX(-50%);
+    background:var(--teal-deep);
+    color:#fff;
+    padding:10px 20px;
+    border-radius:30px;
+    font-size:13.5px;
+    box-shadow:0 4px 14px rgba(0,0,0,.18);
+    z-index:999;
+    opacity:0;
+    transition:opacity .2s;
+  }
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="brand">AZHAR Promo</div>
+    <div class="tagline">Marketing content workshop for your apps</div>
+    <div id="loginError" class="error-msg hidden"></div>
+    <form id="loginForm">
+      <label>Username</label>
+      <input type="text" id="loginUsername" autocomplete="username" required>
+      <label>Password</label>
+      <input type="password" id="loginPassword" autocomplete="current-password" required>
+      <button type="submit" class="btn-primary" id="loginBtn">Log in</button>
+    </form>
+    <div class="setup-toggle">
+      First time here? <a id="showSetup">Create the shared login</a>
+    </div>
+
+    <form id="setupForm" class="hidden" style="margin-top:14px;">
+      <label>Choose a username</label>
+      <input type="text" id="setupUsername" required>
+      <label>Choose a password</label>
+      <input type="password" id="setupPassword" required>
+      <button type="submit" class="btn-primary" id="setupBtn">Create login</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============ APP SHELL ============ -->
+<div id="appShell">
+  <header class="topbar">
+    <div class="brand">AZHAR Promo</div>
+    <nav class="tabs">
+      <button data-tab="generate" class="active">Generate</button>
+      <button data-tab="library">Library</button>
+      <button data-tab="products">Products</button>
+    </nav>
+    <button class="logout-btn" id="logoutBtn">Log out</button>
+  </header>
+
+  <main>
+    <!-- ===== GENERATE TAB ===== -->
+    <section id="tab-generate">
+      <h1 class="page-title">Generate content</h1>
+      <p class="page-sub">Pick a product and platform, and get captions, hashtags, a voiceover script, and a shot list.</p>
+
+      <div class="card">
+        <label>Product</label>
+        <select id="genProduct"></select>
+
+        <div class="row2">
+          <div>
+            <label>Platform</label>
+            <select id="genPlatform">
+              <option value="instagram">Instagram</option>
+              <option value="facebook">Facebook</option>
+              <option value="tiktok">TikTok</option>
+            </select>
+          </div>
+          <div>
+            <label>Content type</label>
+            <select id="genContentType">
+              <option value="new_feature">New feature</option>
+              <option value="testimonial">Customer testimonial</option>
+              <option value="pricing_offer">Pricing offer</option>
+              <option value="daily_tip">Daily tip</option>
+            </select>
+          </div>
+        </div>
+
+        <label>Anything specific to mention? (optional)</label>
+        <textarea id="genExtra" placeholder="e.g. Mention the new Tamil voice feature"></textarea>
+
+        <button class="btn-amber" id="genBtn">Generate content</button>
+      </div>
+
+      <div id="genResults"></div>
+    </section>
+
+    <!-- ===== LIBRARY TAB ===== -->
+    <section id="tab-library" class="hidden">
+      <h1 class="page-title">Content library</h1>
+      <p class="page-sub">Everything you've generated and saved, in one place.</p>
+
+      <div class="filters">
+        <select id="filterProduct"><option value="">All products</option></select>
+        <select id="filterPlatform">
+          <option value="">All platforms</option>
+          <option value="instagram">Instagram</option>
+          <option value="facebook">Facebook</option>
+          <option value="tiktok">TikTok</option>
+        </select>
+        <select id="filterStatus">
+          <option value="">All statuses</option>
+          <option value="draft">Draft</option>
+          <option value="posted">Posted</option>
+        </select>
+      </div>
+
+      <div id="libraryList"></div>
+    </section>
+
+    <!-- ===== PRODUCTS TAB ===== -->
+    <section id="tab-products" class="hidden">
+      <h1 class="page-title">Products</h1>
+      <p class="page-sub">Keep these details current — the AI uses them every time it writes something.</p>
+
+      <div id="productsList"></div>
+
+      <div class="card">
+        <h3 style="margin-top:0;font-size:15px;">Add a new product</h3>
+        <label>Name</label>
+        <input type="text" id="newProductName" placeholder="e.g. My New App">
+        <label>Short description</label>
+        <textarea id="newProductDesc" placeholder="What does it do, in one or two sentences?"></textarea>
+        <label>Target audience</label>
+        <textarea id="newProductAudience" placeholder="Who is this for?"></textarea>
+        <label>Key features</label>
+        <textarea id="newProductFeatures" placeholder="List the main features"></textarea>
+        <label>Tone notes</label>
+        <textarea id="newProductTone" placeholder="How should posts sound? e.g. warm, professional, energetic"></textarea>
+        <label>Pricing info</label>
+        <textarea id="newProductPricing" placeholder="Pricing details to mention"></textarea>
+        <button class="btn-amber" id="addProductBtn">Add product</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const API_URL = window.location.origin;
+let token = localStorage.getItem('azhar_promo_token') || null;
+let products = [];
+let selectedCaptionIndex = null;
+let currentGenResult = null;
+
+// ---------- Toast helper ----------
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+// ---------- Auth ----------
+document.getElementById('showSetup').addEventListener('click', () => {
+  document.getElementById('setupForm').classList.remove('hidden');
+});
+
+document.getElementById('setupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = document.getElementById('setupUsername').value;
+  const password = document.getElementById('setupPassword').value;
+  const btn = document.getElementById('setupBtn');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+  try {
+    const res = await fetch(`${API_URL}/api/auth/setup`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Setup failed');
+    showToast('Login created. You can log in now.');
+    document.getElementById('setupForm').classList.add('hidden');
+    document.getElementById('loginUsername').value = username;
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Create login';
+  }
+});
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = document.getElementById('loginUsername').value;
+  const password = document.getElementById('loginPassword').value;
+  const btn = document.getElementById('loginBtn');
+  const errBox = document.getElementById('loginError');
+  errBox.classList.add('hidden');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Logging in...';
+  try {
+    const res = await fetch(`${API_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Login failed');
+    token = data.token;
+    localStorage.setItem('azhar_promo_token', token);
+    enterApp();
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Log in';
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  localStorage.removeItem('azhar_promo_token');
+  token = null;
+  document.getElementById('appShell').classList.remove('active');
+  document.getElementById('loginScreen').style.display = 'flex';
+});
+
+async function apiCall(path, options = {}) {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      ...(options.headers || {})
+    }
+  });
+  if (res.status === 401) {
+    localStorage.removeItem('azhar_promo_token');
+    token = null;
+    document.getElementById('appShell').classList.remove('active');
+    document.getElementById('loginScreen').style.display = 'flex';
+    throw new Error('Session expired, please log in again');
+  }
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Something went wrong');
+  return data;
+}
+
+function enterApp(){
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appShell').classList.add('active');
+  loadProducts();
+  loadLibrary();
+}
+
+// ---------- Tabs ----------
+document.querySelectorAll('nav.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav.tabs button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('main section').forEach(s => s.classList.add('hidden'));
+    document.getElementById(`tab-${btn.dataset.tab}`).classList.remove('hidden');
+    if (btn.dataset.tab === 'library') loadLibrary();
+  });
+});
+
+// ---------- Products ----------
+async function loadProducts(){
+  try {
+    products = await apiCall('/api/products');
+    const genSelect = document.getElementById('genProduct');
+    const filterSelect = document.getElementById('filterProduct');
+    genSelect.innerHTML = products.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+    filterSelect.innerHTML = '<option value="">All products</option>' +
+      products.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+    renderProductsList();
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+function renderProductsList(){
+  const container = document.getElementById('productsList');
+  if (products.length === 0) {
+    container.innerHTML = '<div class="empty-state">No products yet. Add your first one below.</div>';
+    return;
+  }
+  container.innerHTML = products.map(p => `
+    <div class="product-row">
+      <div class="pname">${escapeHtml(p.name)}</div>
+      <div class="pdesc">${escapeHtml(p.short_description || '')}</div>
+      <div class="actions">
+        <button class="btn-ghost" onclick="archiveProduct(${p.id})">Archive</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+document.getElementById('addProductBtn').addEventListener('click', async () => {
+  const name = document.getElementById('newProductName').value.trim();
+  if (!name) { showToast('Product name is required'); return; }
+  const btn = document.getElementById('addProductBtn');
+  btn.disabled = true;
+  try {
+    await apiCall('/api/products', {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        short_description: document.getElementById('newProductDesc').value,
+        target_audience: document.getElementById('newProductAudience').value,
+        key_features: document.getElementById('newProductFeatures').value,
+        tone_notes: document.getElementById('newProductTone').value,
+        pricing_info: document.getElementById('newProductPricing').value
+      })
+    });
+    ['newProductName','newProductDesc','newProductAudience','newProductFeatures','newProductTone','newProductPricing']
+      .forEach(id => document.getElementById(id).value = '');
+    showToast('Product added');
+    loadProducts();
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+async function archiveProduct(id){
+  if (!confirm('Archive this product? It will be hidden from the Generate screen.')) return;
+  try {
+    await apiCall(`/api/products/${id}`, { method: 'DELETE' });
+    showToast('Product archived');
+    loadProducts();
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+// ---------- Generate ----------
+document.getElementById('genBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('genBtn');
+  const resultsContainer = document.getElementById('genResults');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="border-color:rgba(0,0,0,.2);border-top-color:#fff;"></span>Generating...';
+  resultsContainer.innerHTML = '';
+  selectedCaptionIndex = null;
+
+  try {
+    const result = await apiCall('/api/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        product_id: document.getElementById('genProduct').value,
+        platform: document.getElementById('genPlatform').value,
+        content_type: document.getElementById('genContentType').value,
+        extra_instructions: document.getElementById('genExtra').value
+      })
+    });
+    currentGenResult = result;
+    renderGenResults(result);
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate content';
+  }
+});
+
+function renderGenResults(result){
+  const container = document.getElementById('genResults');
+  const captionsHtml = result.captions.map((c, i) => `
+    <div class="caption-option" data-index="${i}" onclick="selectCaption(${i})">
+      <span class="pick-badge">✓ Selected</span>
+      ${escapeHtml(c)}
+    </div>
+  `).join('');
+
+  const shotListHtml = Array.isArray(result.shot_list) ? result.shot_list.join('\n') : result.shot_list;
+
+  container.innerHTML = `
+    <div class="result-block">
+      <h3>Caption options — tap one to pick it</h3>
+      ${captionsHtml}
+    </div>
+    <div class="result-block">
+      <h3>Hashtags</h3>
+      <div class="hashtags-text">${escapeHtml(result.hashtags)}</div>
+      <button class="copy-btn" onclick="copyText(${JSON.stringify(result.hashtags)})">Copy hashtags</button>
+    </div>
+    <div class="result-block">
+      <h3>Voiceover script</h3>
+      <div class="script-text">${escapeHtml(result.voiceover_script)}</div>
+      <button class="copy-btn" onclick="copyText(${JSON.stringify(result.voiceover_script)})">Copy script</button>
+    </div>
+    <div class="result-block">
+      <h3>Shot list</h3>
+      <div class="shotlist-text">${escapeHtml(shotListHtml)}</div>
+    </div>
+    <button class="btn-amber" id="saveGenBtn">Save to library</button>
+  `;
+
+  document.getElementById('saveGenBtn').addEventListener('click', saveGeneratedPost);
+}
+
+function selectCaption(index){
+  selectedCaptionIndex = index;
+  document.querySelectorAll('.caption-option').forEach((el, i) => {
+    el.classList.toggle('selected', i === index);
+  });
+}
+
+async function saveGeneratedPost(){
+  if (selectedCaptionIndex === null) {
+    showToast('Pick a caption first');
+    return;
+  }
+  const btn = document.getElementById('saveGenBtn');
+  btn.disabled = true;
+  try {
+    const shotListHtml = Array.isArray(currentGenResult.shot_list) ? currentGenResult.shot_list : [currentGenResult.shot_list];
+    await apiCall('/api/posts', {
+      method: 'POST',
+      body: JSON.stringify({
+        product_id: document.getElementById('genProduct').value,
+        platform: document.getElementById('genPlatform').value,
+        content_type: document.getElementById('genContentType').value,
+        caption: currentGenResult.captions[selectedCaptionIndex],
+        hashtags: currentGenResult.hashtags,
+        voiceover_script: currentGenResult.voiceover_script,
+        shot_list: shotListHtml
+      })
+    });
+    showToast('Saved to library');
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function copyText(text){
+  navigator.clipboard.writeText(text).then(() => showToast('Copied'));
+}
+
+// ---------- Library ----------
+['filterProduct','filterPlatform','filterStatus'].forEach(id => {
+  document.getElementById(id).addEventListener('change', loadLibrary);
+});
+
+async function loadLibrary(){
+  const container = document.getElementById('libraryList');
+  const params = new URLSearchParams();
+  const product_id = document.getElementById('filterProduct').value;
+  const platform = document.getElementById('filterPlatform').value;
+  const status = document.getElementById('filterStatus').value;
+  if (product_id) params.append('product_id', product_id);
+  if (platform) params.append('platform', platform);
+  if (status) params.append('status', status);
+
+  try {
+    const posts = await apiCall(`/api/posts?${params.toString()}`);
+    if (posts.length === 0) {
+      container.innerHTML = '<div class="empty-state">Nothing here yet. Generate something and save it.</div>';
+      return;
+    }
+    container.innerHTML = posts.map(p => `
+      <div class="post-card">
+        <div class="meta">
+          <span class="pill product">${escapeHtml(p.product_name)}</span>
+          <span class="pill platform">${escapeHtml(p.platform)}</span>
+          <span class="pill ${p.status}">${escapeHtml(p.status)}</span>
+        </div>
+        <div class="cap-preview">${escapeHtml(p.caption)}</div>
+        <div class="actions">
+          <button class="btn-ghost" onclick="copyText(${JSON.stringify(p.caption + '\\n\\n' + (p.hashtags||''))})">Copy caption</button>
+          ${p.status === 'draft' ? `<button class="btn-teal-outline" onclick="markPosted(${p.id})">Mark posted</button>` : ''}
+          <button class="btn-ghost" onclick="deletePost(${p.id})">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+async function markPosted(id){
+  try {
+    await apiCall(`/api/posts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status: 'posted' })
+    });
+    showToast('Marked as posted');
+    loadLibrary();
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+async function deletePost(id){
+  if (!confirm('Delete this saved post?')) return;
+  try {
+    await apiCall(`/api/posts/${id}`, { method: 'DELETE' });
+    showToast('Deleted');
+    loadLibrary();
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+function escapeHtml(str){
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ---------- Boot ----------
+if (token) {
+  enterApp();
+}
+</script>
+</body>
+</html>
