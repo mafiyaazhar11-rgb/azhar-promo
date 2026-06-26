@@ -8,7 +8,30 @@ const bcrypt = require('bcryptjs');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const multer = require('multer');
+const ffmpegPath = require('ffmpeg-static');
+const ffmpeg = require('fluent-ffmpeg');
+const textToSpeech = require('@google-cloud/text-to-speech');
 require('dotenv').config();
+
+ffmpeg.setFfmpegPath(ffmpegPath);
+
+// Multer stores uploads temporarily on disk before processing.
+const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 25 * 1024 * 1024 } });
+
+// Google Cloud TTS client. Auth comes from GOOGLE_APPLICATION_CREDENTIALS_JSON
+// (the full service account JSON, pasted as a single env var on Render).
+let ttsClient = null;
+function getTtsClient() {
+  if (ttsClient) return ttsClient;
+  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not set');
+  }
+  const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+  ttsClient = new textToSpeech.TextToSpeechClient({ credentials });
+  return ttsClient;
+}
 
 const app = express();
 app.use(cors());
@@ -315,6 +338,166 @@ app.delete('/api/posts/:id', requireAuth, async (req, res) => {
   }
 });
 
+// ---------- Video generation ----------
+// Takes: screenshots (already cropped client-side), a voiceover script, and an
+// optional music file. Produces a downloadable 1080x1920 MP4 with voiceover,
+// burned-in subtitles, and mild background music.
+app.post('/api/video/generate',
+  requireAuth,
+  upload.fields([{ name: 'screenshots', maxCount: 12 }, { name: 'music', maxCount: 1 }]),
+  async (req, res) => {
+    const tempFiles = []; // track everything to clean up at the end
+    const jobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const workDir = path.join(os.tmpdir(), jobId);
+
+    try {
+      const { voiceover_script, voice_language } = req.body;
+      const screenshots = req.files['screenshots'] || [];
+      const musicFile = req.files['music'] ? req.files['music'][0] : null;
+
+      if (!voiceover_script || screenshots.length === 0) {
+        return res.status(400).json({ error: 'A voiceover script and at least one screenshot are required' });
+      }
+
+      fs.mkdirSync(workDir, { recursive: true });
+
+      // 1. Generate voiceover audio via Google Cloud TTS
+      const client = getTtsClient();
+      const languageCode = voice_language || 'en-IN';
+      const [ttsResponse] = await client.synthesizeSpeech({
+        input: { text: voiceover_script },
+        voice: { languageCode, ssmlGender: 'FEMALE' },
+        audioConfig: { audioEncoding: 'MP3' }
+      });
+      const voicePath = path.join(workDir, 'voice.mp3');
+      fs.writeFileSync(voicePath, ttsResponse.audioContent, 'binary');
+      tempFiles.push(voicePath);
+
+      // 2. Get the voiceover's actual duration so we can time screenshots evenly
+      const voiceDuration = await getAudioDuration(voicePath);
+      const perImageDuration = Math.max(voiceDuration / screenshots.length, 1.5);
+
+      // 3. Build a simple subtitle file (.srt), splitting the script evenly
+      //    across the voiceover's duration — a readable approximation, not
+      //    word-perfect timing.
+      const srtPath = path.join(workDir, 'subs.srt');
+      writeSrtFile(srtPath, voiceover_script, voiceDuration);
+      tempFiles.push(srtPath);
+
+      // 4. Build the FFmpeg input list (each screenshot shown for perImageDuration)
+      const concatListPath = path.join(workDir, 'concat.txt');
+      let concatContent = '';
+      screenshots.forEach(file => {
+        concatContent += `file '${file.path.replace(/'/g, "'\\''")}'\nduration ${perImageDuration}\n`;
+      });
+      // FFmpeg's concat demuxer needs the last file repeated without a duration line
+      concatContent += `file '${screenshots[screenshots.length - 1].path.replace(/'/g, "'\\''")}'\n`;
+      fs.writeFileSync(concatListPath, concatContent);
+      tempFiles.push(concatListPath);
+
+      const silentVideoPath = path.join(workDir, 'silent.mp4');
+      const finalVideoPath = path.join(workDir, 'final.mp4');
+      tempFiles.push(silentVideoPath, finalVideoPath);
+
+      // 5. Assemble screenshots into a silent vertical video with burned-in subtitles
+      await new Promise((resolve, reject) => {
+        ffmpeg()
+          .input(concatListPath)
+          .inputOptions(['-f', 'concat', '-safe', '0'])
+          .videoFilters([
+            "scale=1080:1920:force_original_aspect_ratio=decrease",
+            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black",
+            `subtitles='${srtPath.replace(/:/g, '\\:')}':force_style='FontSize=20,PrimaryColour=&HFFFFFF&,BorderStyle=3,Outline=1,Alignment=2,MarginV=80'`
+          ])
+          .outputOptions(['-r', '30', '-pix_fmt', 'yuv420p'])
+          .output(silentVideoPath)
+          .on('end', resolve)
+          .on('error', reject)
+          .run();
+      });
+
+      // 6. Mix voiceover (+ optional quiet background music) onto the video
+      await new Promise((resolve, reject) => {
+        const cmd = ffmpeg().input(silentVideoPath).input(voicePath);
+
+        if (musicFile) {
+          cmd.input(musicFile.path);
+          tempFiles.push(musicFile.path);
+          cmd.complexFilter([
+            // Loop music quietly under the voice; voice stays at full volume
+            '[2:a]volume=0.15,aloop=loop=-1:size=2e9[music]',
+            '[1:a][music]amix=inputs=2:duration=first:dropout_transition=2[audioOut]'
+          ]);
+          cmd.outputOptions(['-map', '0:v', '-map', '[audioOut]', '-shortest', '-c:v', 'copy', '-c:a', 'aac']);
+        } else {
+          cmd.outputOptions(['-map', '0:v', '-map', '1:a', '-shortest', '-c:v', 'copy', '-c:a', 'aac']);
+        }
+
+        cmd.output(finalVideoPath).on('end', resolve).on('error', reject).run();
+      });
+
+      // 7. Send the finished file, then clean up
+      res.download(finalVideoPath, 'azhar-promo-video.mp4', () => {
+        cleanupFiles(tempFiles);
+        fs.rm(workDir, { recursive: true, force: true }, () => {});
+        screenshots.forEach(f => fs.unlink(f.path, () => {}));
+      });
+
+    } catch (err) {
+      console.error('Video generation error:', err);
+      cleanupFiles(tempFiles);
+      fs.rm(workDir, { recursive: true, force: true }, () => {});
+      res.status(500).json({ error: 'Video generation failed: ' + (err.message || 'unknown error') });
+    }
+  }
+);
+
+function cleanupFiles(paths) {
+  paths.forEach(p => { try { fs.unlinkSync(p); } catch (e) {} });
+}
+
+function getAudioDuration(filePath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) return reject(err);
+      resolve(metadata.format.duration || 30);
+    });
+  });
+}
+
+// Splits the script into readable chunks and writes a basic, evenly-timed .srt file.
+function writeSrtFile(srtPath, script, totalDuration) {
+  const sentences = script
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[.!?])\s+/)
+    .filter(s => s.trim().length > 0);
+
+  if (sentences.length === 0) sentences.push(script);
+
+  const perSentence = totalDuration / sentences.length;
+  let srt = '';
+  let t = 0;
+  sentences.forEach((sentence, i) => {
+    const start = formatSrtTime(t);
+    const end = formatSrtTime(t + perSentence);
+    srt += `${i + 1}\n${start} --> ${end}\n${sentence.trim()}\n\n`;
+    t += perSentence;
+  });
+  fs.writeFileSync(srtPath, srt);
+}
+
+function formatSrtTime(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 1000);
+  const pad = (n, len = 2) => String(n).padStart(len, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)},${pad(ms, 3)}`;
+}
+
+
+// AND the single login (username: azhar / password: azhar2026).
+// Safe to visit more than once — it won't create a duplicate user if one already exists.
 // One-time setup: visit this URL once in your browser to create the database tables
 // AND the single login (username: azhar / password: azhar2026).
 // Safe to visit more than once — it won't create a duplicate user if one already exists.
