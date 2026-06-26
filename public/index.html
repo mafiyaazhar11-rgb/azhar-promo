@@ -395,6 +395,53 @@
     margin-top:6px;
   }
   .crop-slider{width:100%;margin-top:6px;}
+
+  /* ---------- Version tabs in generate results ---------- */
+  .version-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+  .version-tab-btn{
+    background:#faf7f0;
+    border:1px solid var(--line);
+    color:var(--ink);
+    padding:7px 13px;
+    border-radius:7px;
+    font-size:12.5px;
+    font-weight:600;
+  }
+  .version-tab-btn.active{
+    background:var(--teal-deep);
+    color:#fff;
+    border-color:var(--teal-deep);
+  }
+  .hook-item{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:10px 12px;
+    margin-bottom:6px;
+    font-size:13.5px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:8px;
+  }
+
+  /* ---------- Calendar grid ---------- */
+  .calendar-day{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:14px 16px;
+    margin-bottom:10px;
+  }
+  .calendar-day .day-name{
+    font-weight:700;
+    color:var(--teal-deep);
+    font-size:14px;
+    margin-bottom:6px;
+  }
+  .calendar-day .day-field{font-size:13px;margin-bottom:4px;}
+  .calendar-day .day-field b{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.03em;display:block;margin-bottom:2px;}
+  .calendar-day textarea, .calendar-day input{font-size:13px;}
 </style>
 </head>
 <body>
@@ -422,6 +469,7 @@
     <nav class="tabs">
       <button data-tab="generate" class="active">Generate</button>
       <button data-tab="video">Video</button>
+      <button data-tab="calendar">Calendar</button>
       <button data-tab="library">Library</button>
       <button data-tab="products">Products</button>
       <button data-tab="settings">Settings</button>
@@ -433,7 +481,7 @@
     <!-- ===== GENERATE TAB ===== -->
     <section id="tab-generate">
       <h1 class="page-title">Generate content</h1>
-      <p class="page-sub">Pick a product and platform, and get captions, hashtags, a voiceover script, and a shot list.</p>
+      <p class="page-sub">Pick a product, audience, and angle — get 5 ready-to-use versions, hooks, hashtags, a voiceover script, and a shot list.</p>
 
       <div class="card">
         <label>Product</label>
@@ -455,9 +503,48 @@
               <option value="testimonial">Customer testimonial</option>
               <option value="pricing_offer">Pricing offer</option>
               <option value="daily_tip">Daily tip</option>
+              <option value="whatsapp_group">WhatsApp parent group message</option>
+              <option value="poster_text">Poster text (headline + CTA)</option>
             </select>
           </div>
         </div>
+
+        <div class="row2">
+          <div>
+            <label>Target audience</label>
+            <select id="genAudience">
+              <option value="">Not specified</option>
+              <option value="parents">Parents</option>
+              <option value="students">Students</option>
+              <option value="tuition_teachers">Tuition teachers</option>
+              <option value="school_groups">School groups</option>
+              <option value="exam_prep_students">Exam preparation students</option>
+            </select>
+          </div>
+          <div>
+            <label>Marketing angle</label>
+            <select id="genAngle">
+              <option value="">Not specified</option>
+              <option value="tuition_cost">Tuition cost pain</option>
+              <option value="language_problem">Language problem</option>
+              <option value="exam_fear">Exam fear</option>
+              <option value="homework_help">Homework help</option>
+              <option value="parent_peace_of_mind">Parent peace of mind</option>
+              <option value="free_trial">Free trial offer</option>
+              <option value="tuition_comparison">Comparison with tuition</option>
+            </select>
+          </div>
+        </div>
+
+        <label>Output language</label>
+        <select id="genLanguage">
+          <option value="english">English</option>
+          <option value="tamil">Tamil</option>
+          <option value="malayalam">Malayalam</option>
+          <option value="hindi">Hindi</option>
+          <option value="tamil_english_mix">Tamil + English mix</option>
+          <option value="malayalam_english_mix">Malayalam + English mix</option>
+        </select>
 
         <label>Anything specific to mention? (optional)</label>
         <textarea id="genExtra" placeholder="e.g. Mention the new Tamil voice feature"></textarea>
@@ -509,10 +596,34 @@
       </div>
     </section>
 
+    <!-- ===== CALENDAR TAB ===== -->
+    <section id="tab-calendar" class="hidden">
+      <h1 class="page-title">Content calendar</h1>
+      <p class="page-sub">Generate a Monday-to-Sunday posting plan for a product.</p>
+
+      <div class="card">
+        <div class="row2">
+          <div>
+            <label>Product</label>
+            <select id="calProduct"></select>
+          </div>
+          <div>
+            <label>Week starting (Monday)</label>
+            <input type="date" id="calWeekStart">
+          </div>
+        </div>
+        <button class="btn-amber" id="calGenerateBtn">Generate weekly plan</button>
+      </div>
+
+      <div id="calendarGrid"></div>
+    </section>
+
     <!-- ===== LIBRARY TAB ===== -->
     <section id="tab-library" class="hidden">
       <h1 class="page-title">Content library</h1>
       <p class="page-sub">Everything you've generated and saved, in one place.</p>
+
+      <input type="text" id="librarySearch" placeholder="Search saved content..." style="margin-bottom:12px;">
 
       <div class="filters">
         <select id="filterProduct"><option value="">All products</option></select>
@@ -522,10 +633,19 @@
           <option value="facebook">Facebook</option>
           <option value="tiktok">TikTok</option>
         </select>
+        <select id="filterAudience">
+          <option value="">All audiences</option>
+          <option value="parents">Parents</option>
+          <option value="students">Students</option>
+          <option value="tuition_teachers">Tuition teachers</option>
+          <option value="school_groups">School groups</option>
+          <option value="exam_prep_students">Exam prep students</option>
+        </select>
         <select id="filterStatus">
           <option value="">All statuses</option>
           <option value="draft">Draft</option>
           <option value="posted">Posted</option>
+          <option value="used_for_ad">Used for ad</option>
         </select>
       </div>
 
@@ -581,7 +701,6 @@
 const API_URL = window.location.origin;
 let token = localStorage.getItem('azhar_promo_token') || null;
 let products = [];
-let selectedCaptionIndex = null;
 let currentGenResult = null;
 
 // ---------- Toast helper ----------
@@ -666,8 +785,22 @@ document.querySelectorAll('nav.tabs button').forEach(btn => {
     document.querySelectorAll('main section').forEach(s => s.classList.add('hidden'));
     document.getElementById(`tab-${btn.dataset.tab}`).classList.remove('hidden');
     if (btn.dataset.tab === 'library') loadLibrary();
+    if (btn.dataset.tab === 'calendar') initCalendarTab();
   });
 });
+
+function initCalendarTab(){
+  const dateInput = document.getElementById('calWeekStart');
+  if (!dateInput.value) {
+    // Default to this week's Monday
+    const today = new Date();
+    const day = today.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + diffToMonday);
+    dateInput.value = monday.toISOString().slice(0, 10);
+  }
+}
 
 // ---------- Products ----------
 async function loadProducts(){
@@ -675,9 +808,13 @@ async function loadProducts(){
     products = await apiCall('/api/products');
     const genSelect = document.getElementById('genProduct');
     const filterSelect = document.getElementById('filterProduct');
+    const calSelect = document.getElementById('calProduct');
     genSelect.innerHTML = products.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
     filterSelect.innerHTML = '<option value="">All products</option>' +
       products.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+    if (calSelect) {
+      calSelect.innerHTML = products.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+    }
     renderProductsList();
   } catch (err) {
     showToast(err.message);
@@ -741,13 +878,15 @@ async function archiveProduct(id){
 }
 
 // ---------- Generate ----------
+let activeVersionKey = 'emotional';
+
 document.getElementById('genBtn').addEventListener('click', async () => {
   const btn = document.getElementById('genBtn');
   const resultsContainer = document.getElementById('genResults');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner" style="border-color:rgba(0,0,0,.2);border-top-color:#fff;"></span>Generating...';
   resultsContainer.innerHTML = '';
-  selectedCaptionIndex = null;
+  activeVersionKey = 'emotional';
 
   try {
     const result = await apiCall('/api/generate', {
@@ -756,6 +895,9 @@ document.getElementById('genBtn').addEventListener('click', async () => {
         product_id: document.getElementById('genProduct').value,
         platform: document.getElementById('genPlatform').value,
         content_type: document.getElementById('genContentType').value,
+        target_audience: document.getElementById('genAudience').value,
+        marketing_angle: document.getElementById('genAngle').value,
+        output_language: document.getElementById('genLanguage').value,
         extra_instructions: document.getElementById('genExtra').value
       })
     });
@@ -769,21 +911,40 @@ document.getElementById('genBtn').addEventListener('click', async () => {
   }
 });
 
+const VERSION_LABELS = {
+  emotional: 'Emotional',
+  direct_sales: 'Direct sales',
+  reel_caption: 'Reel caption',
+  whatsapp_message: 'WhatsApp message',
+  ad_copy: 'Ad copy'
+};
+
 function renderGenResults(result){
   const container = document.getElementById('genResults');
-  const captionsHtml = result.captions.map((c, i) => `
-    <div class="caption-option" data-index="${i}" onclick="selectCaption(${i})">
-      <span class="pick-badge">✓ Selected</span>
-      ${escapeHtml(c)}
+  const versions = result.versions || {};
+  const shotListHtml = Array.isArray(result.shot_list) ? result.shot_list.join('\n') : result.shot_list;
+
+  const versionTabsHtml = Object.keys(VERSION_LABELS).map(key => `
+    <button class="version-tab-btn ${key === activeVersionKey ? 'active' : ''}" data-version="${key}">${VERSION_LABELS[key]}</button>
+  `).join('');
+
+  const hooksHtml = (result.hooks || []).map(h => `
+    <div class="hook-item">
+      <span>${escapeHtml(h)}</span>
+      <button class="copy-btn" style="margin-top:0;flex-shrink:0;" onclick="copyText(${JSON.stringify(h)})">Copy</button>
     </div>
   `).join('');
 
-  const shotListHtml = Array.isArray(result.shot_list) ? result.shot_list.join('\n') : result.shot_list;
-
   container.innerHTML = `
     <div class="result-block">
-      <h3>Caption options — tap one to pick it</h3>
-      ${captionsHtml}
+      <h3>5 content versions — tap a tab to view, this is what gets saved</h3>
+      <div class="version-tabs">${versionTabsHtml}</div>
+      <div class="caption-option selected" id="activeVersionText">${escapeHtml(versions[activeVersionKey] || '')}</div>
+      <button class="copy-btn" id="copyVersionBtn">Copy this version</button>
+    </div>
+    <div class="result-block">
+      <h3>Hook ideas — 5 strong openers to choose from</h3>
+      ${hooksHtml}
     </div>
     <div class="result-block">
       <h3>Hashtags</h3>
@@ -796,41 +957,46 @@ function renderGenResults(result){
       <button class="copy-btn" onclick="copyText(${JSON.stringify(result.voiceover_script)})">Copy script</button>
     </div>
     <div class="result-block">
-      <h3>Shot list</h3>
+      <h3>Shot list (0-30 sec breakdown)</h3>
       <div class="shotlist-text">${escapeHtml(shotListHtml)}</div>
     </div>
     <button class="btn-amber" id="saveGenBtn">Save to library</button>
   `;
 
+  container.querySelectorAll('.version-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeVersionKey = btn.dataset.version;
+      container.querySelectorAll('.version-tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+      document.getElementById('activeVersionText').textContent = versions[activeVersionKey] || '';
+    });
+  });
+  document.getElementById('copyVersionBtn').addEventListener('click', () => {
+    copyText(versions[activeVersionKey] || '');
+  });
   document.getElementById('saveGenBtn').addEventListener('click', saveGeneratedPost);
 }
 
-function selectCaption(index){
-  selectedCaptionIndex = index;
-  document.querySelectorAll('.caption-option').forEach((el, i) => {
-    el.classList.toggle('selected', i === index);
-  });
-}
-
 async function saveGeneratedPost(){
-  if (selectedCaptionIndex === null) {
-    showToast('Pick a caption first');
-    return;
-  }
   const btn = document.getElementById('saveGenBtn');
   btn.disabled = true;
   try {
-    const shotListHtml = Array.isArray(currentGenResult.shot_list) ? currentGenResult.shot_list : [currentGenResult.shot_list];
+    const versions = currentGenResult.versions || {};
+    const shotListArr = Array.isArray(currentGenResult.shot_list) ? currentGenResult.shot_list : [currentGenResult.shot_list];
     await apiCall('/api/posts', {
       method: 'POST',
       body: JSON.stringify({
         product_id: document.getElementById('genProduct').value,
         platform: document.getElementById('genPlatform').value,
         content_type: document.getElementById('genContentType').value,
-        caption: currentGenResult.captions[selectedCaptionIndex],
+        target_audience: document.getElementById('genAudience').value || null,
+        marketing_angle: document.getElementById('genAngle').value || null,
+        output_language: document.getElementById('genLanguage').value || null,
+        caption: versions[activeVersionKey] || '',
         hashtags: currentGenResult.hashtags,
         voiceover_script: currentGenResult.voiceover_script,
-        shot_list: shotListHtml
+        shot_list: shotListArr,
+        hooks: currentGenResult.hooks || [],
+        versions: versions
       })
     });
     showToast('Saved to library');
@@ -846,8 +1012,13 @@ function copyText(text){
 }
 
 // ---------- Library ----------
-['filterProduct','filterPlatform','filterStatus'].forEach(id => {
+['filterProduct','filterPlatform','filterStatus','filterAudience'].forEach(id => {
   document.getElementById(id).addEventListener('change', loadLibrary);
+});
+let librarySearchDebounce = null;
+document.getElementById('librarySearch').addEventListener('input', () => {
+  clearTimeout(librarySearchDebounce);
+  librarySearchDebounce = setTimeout(loadLibrary, 350);
 });
 
 async function loadLibrary(){
@@ -856,9 +1027,13 @@ async function loadLibrary(){
   const product_id = document.getElementById('filterProduct').value;
   const platform = document.getElementById('filterPlatform').value;
   const status = document.getElementById('filterStatus').value;
+  const target_audience = document.getElementById('filterAudience').value;
+  const search = document.getElementById('librarySearch').value.trim();
   if (product_id) params.append('product_id', product_id);
   if (platform) params.append('platform', platform);
   if (status) params.append('status', status);
+  if (target_audience) params.append('target_audience', target_audience);
+  if (search) params.append('search', search);
 
   try {
     const posts = await apiCall(`/api/posts?${params.toString()}`);
@@ -871,16 +1046,32 @@ async function loadLibrary(){
         <div class="meta">
           <span class="pill product">${escapeHtml(p.product_name)}</span>
           <span class="pill platform">${escapeHtml(p.platform)}</span>
-          <span class="pill ${p.status}">${escapeHtml(p.status)}</span>
+          <span class="pill ${p.status}">${escapeHtml((p.status || '').replace('_', ' '))}</span>
+          ${p.target_audience ? `<span class="pill product">${escapeHtml(p.target_audience.replace('_',' '))}</span>` : ''}
+          ${p.posted_at ? `<span style="font-size:11px;color:var(--muted);">Posted ${new Date(p.posted_at).toLocaleDateString()}</span>` : ''}
         </div>
         <div class="cap-preview">${escapeHtml(p.caption)}</div>
         <div class="actions">
           <button class="btn-ghost" onclick="copyText(${JSON.stringify(p.caption + '\\n\\n' + (p.hashtags||''))})">Copy caption</button>
           ${p.status === 'draft' ? `<button class="btn-teal-outline" onclick="markPosted(${p.id})">Mark posted</button>` : ''}
+          ${p.status !== 'used_for_ad' ? `<button class="btn-teal-outline" onclick="markUsedForAd(${p.id})">Mark used for ad</button>` : ''}
           <button class="btn-ghost" onclick="deletePost(${p.id})">Delete</button>
         </div>
       </div>
     `).join('');
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+async function markUsedForAd(id){
+  try {
+    await apiCall(`/api/posts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status: 'used_for_ad' })
+    });
+    showToast('Marked as used for ad');
+    loadLibrary();
   } catch (err) {
     showToast(err.message);
   }
@@ -1120,6 +1311,48 @@ document.getElementById('generateVideoBtn').addEventListener('click', async () =
     progressBox.classList.add('hidden');
   }
 });
+
+// ---------- Content calendar ----------
+document.getElementById('calGenerateBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('calGenerateBtn');
+  const productId = document.getElementById('calProduct').value;
+  const weekStart = document.getElementById('calWeekStart').value;
+  if (!productId || !weekStart) { showToast('Pick a product and week start date'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="border-color:rgba(0,0,0,.2);border-top-color:#fff;"></span>Generating...';
+  try {
+    const days = await apiCall('/api/calendar/generate', {
+      method: 'POST',
+      body: JSON.stringify({ product_id: productId, week_start_date: weekStart })
+    });
+    renderCalendar(days);
+    showToast('Weekly plan generated');
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate weekly plan';
+  }
+});
+
+function renderCalendar(days){
+  const container = document.getElementById('calendarGrid');
+  const order = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const sorted = [...days].sort((a, b) => order.indexOf(a.day_of_week) - order.indexOf(b.day_of_week));
+
+  container.innerHTML = sorted.map(day => `
+    <div class="calendar-day">
+      <div class="day-name">${escapeHtml(day.day_of_week)}</div>
+      <div class="day-field"><b>Content idea</b>${escapeHtml(day.content_idea || '')}</div>
+      <div class="day-field"><b>Platform</b>${escapeHtml(day.platform || '')}</div>
+      <div class="day-field"><b>Caption idea</b>${escapeHtml(day.caption_idea || '')}</div>
+      <div class="day-field"><b>CTA</b>${escapeHtml(day.cta || '')}</div>
+      <button class="copy-btn" onclick="copyText(${JSON.stringify((day.caption_idea||'') + '\\n\\n' + (day.cta||''))})">Copy caption + CTA</button>
+    </div>
+  `).join('');
+}
+
 
 // ---------- Boot ----------
 if (token) {
