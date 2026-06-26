@@ -366,6 +366,35 @@
     transition:opacity .2s;
   }
   .toast.show{opacity:1;}
+
+  /* ---------- Screenshot crop tool ---------- */
+  .shot-item{
+    display:flex;
+    gap:12px;
+    align-items:flex-start;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:10px;
+    margin-bottom:8px;
+    background:#fff;
+  }
+  .shot-item canvas{
+    border-radius:6px;
+    background:#222;
+    max-width:120px;
+    cursor:ns-resize;
+  }
+  .shot-item .shot-controls{flex:1;font-size:12.5px;color:var(--muted);}
+  .shot-item .shot-controls .order{font-weight:700;color:var(--ink);margin-bottom:4px;}
+  .shot-item button.remove-shot{
+    background:transparent;
+    color:var(--danger);
+    font-size:12px;
+    text-decoration:underline;
+    padding:0;
+    margin-top:6px;
+  }
+  .crop-slider{width:100%;margin-top:6px;}
 </style>
 </head>
 <body>
@@ -392,6 +421,7 @@
     <div class="brand">AZHAR Promo</div>
     <nav class="tabs">
       <button data-tab="generate" class="active">Generate</button>
+      <button data-tab="video">Video</button>
       <button data-tab="library">Library</button>
       <button data-tab="products">Products</button>
       <button data-tab="settings">Settings</button>
@@ -436,6 +466,47 @@
       </div>
 
       <div id="genResults"></div>
+    </section>
+
+    <!-- ===== VIDEO TAB ===== -->
+    <section id="tab-video" class="hidden">
+      <h1 class="page-title">Make a video</h1>
+      <p class="page-sub">Upload your real screenshots, pick a saved script, and download a finished video with voiceover and subtitles.</p>
+
+      <div class="card">
+        <label>Pick a saved post (uses its voiceover script)</label>
+        <select id="videoPostSelect"><option value="">Select a saved post...</option></select>
+
+        <label>Voiceover script (editable)</label>
+        <textarea id="videoScript" style="min-height:100px;"></textarea>
+
+        <label>Voice language</label>
+        <select id="videoLanguage">
+          <option value="en-IN">English (India)</option>
+          <option value="ta-IN">Tamil</option>
+          <option value="ml-IN">Malayalam</option>
+          <option value="hi-IN">Hindi</option>
+        </select>
+
+        <label>Screenshots (in order — tap each to crop out the status bar)</label>
+        <input type="file" id="screenshotInput" accept="image/*" multiple>
+        <div id="screenshotPreviewList" style="margin-top:10px;"></div>
+
+        <label>Background music (optional — download a track from Pixabay or Mixkit first, then upload it here)</label>
+        <input type="file" id="musicInput" accept="audio/*">
+        <p style="font-size:12px;color:var(--muted);margin-top:4px;">
+          Need a track? <a href="https://pixabay.com/music/" target="_blank" style="color:var(--teal-deep);">Pixabay Music</a> or
+          <a href="https://mixkit.co/free-stock-music/" target="_blank" style="color:var(--teal-deep);">Mixkit</a> — both are free, no attribution needed.
+        </p>
+
+        <button class="btn-amber" id="generateVideoBtn">Generate video</button>
+        <div id="videoProgress" class="hidden" style="margin-top:14px;font-size:13.5px;color:var(--muted);">
+          <span class="spinner" style="border-color:rgba(0,0,0,.2);border-top-color:var(--amber);"></span>
+          Generating your video — this can take 30-90 seconds, please don't close this tab...
+        </div>
+        <div id="videoError" class="error-msg hidden" style="margin-top:14px;"></div>
+        <div id="videoResult" class="hidden" style="margin-top:14px;"></div>
+      </div>
     </section>
 
     <!-- ===== LIBRARY TAB ===== -->
@@ -874,6 +945,179 @@ document.getElementById('changePwBtn').addEventListener('click', async () => {
     errBox.classList.remove('hidden');
   } finally {
     btn.disabled = false;
+  }
+});
+
+// ---------- Video tab ----------
+let uploadedScreenshots = []; // { file, img, cropTop, cropBottom, canvas }
+
+document.querySelectorAll('nav.tabs button').forEach(btn => {
+  if (btn.dataset.tab === 'video') {
+    btn.addEventListener('click', populateVideoPostSelect);
+  }
+});
+
+async function populateVideoPostSelect(){
+  try {
+    const posts = await apiCall('/api/posts');
+    const select = document.getElementById('videoPostSelect');
+    select.innerHTML = '<option value="">Select a saved post...</option>' +
+      posts.map(p => `<option value="${p.id}">${escapeHtml(p.product_name)} — ${escapeHtml(p.platform)} — ${escapeHtml((p.caption||'').slice(0,40))}...</option>`).join('');
+    select.dataset.posts = JSON.stringify(posts);
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+document.getElementById('videoPostSelect').addEventListener('change', (e) => {
+  const posts = JSON.parse(e.target.dataset.posts || '[]');
+  const selected = posts.find(p => String(p.id) === e.target.value);
+  if (selected) {
+    document.getElementById('videoScript').value = selected.voiceover_script || '';
+  }
+});
+
+document.getElementById('screenshotInput').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  for (const file of files) {
+    const img = await loadImage(file);
+    uploadedScreenshots.push({ file, img, cropTop: 0, cropBottom: 0 });
+  }
+  renderScreenshotList();
+  e.target.value = ''; // allow re-adding
+});
+
+function loadImage(file){
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function renderScreenshotList(){
+  const container = document.getElementById('screenshotPreviewList');
+  container.innerHTML = '';
+  uploadedScreenshots.forEach((shot, index) => {
+    const item = document.createElement('div');
+    item.className = 'shot-item';
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 90;
+    canvas.height = 160;
+    shot.canvas = canvas;
+
+    const controls = document.createElement('div');
+    controls.className = 'shot-controls';
+    controls.innerHTML = `
+      <div class="order">Image ${index + 1} of ${uploadedScreenshots.length}</div>
+      Crop top (status bar): <span class="topVal">0</span>px
+      <input type="range" class="crop-slider topSlider" min="0" max="${Math.floor(shot.img.height * 0.25)}" value="0">
+      Crop bottom: <span class="bottomVal">0</span>px
+      <input type="range" class="crop-slider bottomSlider" min="0" max="${Math.floor(shot.img.height * 0.25)}" value="0">
+      <br><button class="remove-shot">Remove this image</button>
+    `;
+
+    item.appendChild(canvas);
+    item.appendChild(controls);
+    container.appendChild(item);
+
+    const topSlider = controls.querySelector('.topSlider');
+    const bottomSlider = controls.querySelector('.bottomSlider');
+    const topVal = controls.querySelector('.topVal');
+    const bottomVal = controls.querySelector('.bottomVal');
+
+    function redraw(){
+      shot.cropTop = parseInt(topSlider.value);
+      shot.cropBottom = parseInt(bottomSlider.value);
+      topVal.textContent = shot.cropTop;
+      bottomVal.textContent = shot.cropBottom;
+      drawCroppedPreview(canvas, shot.img, shot.cropTop, shot.cropBottom);
+    }
+    topSlider.addEventListener('input', redraw);
+    bottomSlider.addEventListener('input', redraw);
+    controls.querySelector('.remove-shot').addEventListener('click', () => {
+      uploadedScreenshots.splice(index, 1);
+      renderScreenshotList();
+    });
+
+    redraw();
+  });
+}
+
+function drawCroppedPreview(canvas, img, cropTop, cropBottom){
+  const ctx = canvas.getContext('2d');
+  const srcHeight = img.height - cropTop - cropBottom;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, cropTop, img.width, srcHeight, 0, 0, canvas.width, canvas.height);
+}
+
+function getCroppedBlob(shot){
+  return new Promise((resolve) => {
+    const fullCanvas = document.createElement('canvas');
+    const srcHeight = shot.img.height - shot.cropTop - shot.cropBottom;
+    fullCanvas.width = shot.img.width;
+    fullCanvas.height = srcHeight;
+    const ctx = fullCanvas.getContext('2d');
+    ctx.drawImage(shot.img, 0, shot.cropTop, shot.img.width, srcHeight, 0, 0, shot.img.width, srcHeight);
+    fullCanvas.toBlob(resolve, 'image/jpeg', 0.95);
+  });
+}
+
+document.getElementById('generateVideoBtn').addEventListener('click', async () => {
+  const errBox = document.getElementById('videoError');
+  const progressBox = document.getElementById('videoProgress');
+  const resultBox = document.getElementById('videoResult');
+  errBox.classList.add('hidden');
+  resultBox.classList.add('hidden');
+
+  const script = document.getElementById('videoScript').value.trim();
+  if (!script) { showToast('Add a voiceover script first'); return; }
+  if (uploadedScreenshots.length === 0) { showToast('Upload at least one screenshot'); return; }
+
+  const btn = document.getElementById('generateVideoBtn');
+  btn.disabled = true;
+  progressBox.classList.remove('hidden');
+
+  try {
+    const formData = new FormData();
+    formData.append('voiceover_script', script);
+    formData.append('voice_language', document.getElementById('videoLanguage').value);
+
+    for (const shot of uploadedScreenshots) {
+      const blob = await getCroppedBlob(shot);
+      formData.append('screenshots', blob, 'shot.jpg');
+    }
+
+    const musicFile = document.getElementById('musicInput').files[0];
+    if (musicFile) formData.append('music', musicFile);
+
+    const res = await fetch(`${API_URL}/api/video/generate`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: 'Video generation failed' }));
+      throw new Error(data.error || 'Video generation failed');
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    resultBox.innerHTML = `
+      <div class="result-block">
+        <h3>Your video is ready</h3>
+        <a href="${url}" download="azhar-promo-video.mp4" class="btn-amber" style="display:inline-block;text-decoration:none;">Download video</a>
+      </div>
+    `;
+    resultBox.classList.remove('hidden');
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    progressBox.classList.add('hidden');
   }
 });
 
