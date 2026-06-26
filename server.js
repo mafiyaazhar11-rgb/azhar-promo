@@ -6,6 +6,8 @@ const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -304,6 +306,30 @@ app.delete('/api/posts/:id', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Delete post error:', err);
     res.status(500).json({ error: 'Could not delete post' });
+  }
+});
+
+// One-time setup: visit this URL once in your browser to create the database tables.
+// Safe to visit more than once (uses CREATE TABLE IF NOT EXISTS).
+app.get('/api/setup-db', async (req, res) => {
+  try {
+    const schemaSql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+    await pool.query(schemaSql);
+    res.send(`
+      <div style="font-family:sans-serif;max-width:480px;margin:60px auto;text-align:center;">
+        <h2>Database setup complete ✅</h2>
+        <p>Tables created and your 4 products are seeded. You can go back and create the shared login now.</p>
+        <a href="/" style="color:#1f6f6b;font-weight:600;">Go to AZHAR Promo</a>
+      </div>
+    `);
+  } catch (err) {
+    console.error('Setup-db error:', err);
+    res.status(500).send(`
+      <div style="font-family:sans-serif;max-width:480px;margin:60px auto;">
+        <h2>Setup failed</h2>
+        <pre style="white-space:pre-wrap;background:#fbe9e2;padding:12px;border-radius:8px;">${err.message || err}</pre>
+      </div>
+    `);
   }
 });
 
