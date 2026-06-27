@@ -676,9 +676,10 @@ app.post('/api/video/generate',
         throw limitErr;
       }
 
-      const { voiceover_script, voice_language } = req.body;
+      const { voiceover_script, voice_language, voice_gender } = req.body;
       const screenshots = req.files['screenshots'] || [];
       const musicFile = req.files['music'] ? req.files['music'][0] : null;
+      const ssmlGender = (voice_gender === 'MALE') ? 'MALE' : 'FEMALE'; // default to FEMALE if not specified
 
       if (!voiceover_script || screenshots.length === 0) {
         return res.status(400).json({ error: 'A voiceover script and at least one screenshot are required' });
@@ -699,7 +700,7 @@ app.post('/api/video/generate',
         const languageCode = voice_language || 'en-IN';
         [ttsResponse] = await client.synthesizeSpeech({
           input: { ssml },
-          voice: { languageCode, ssmlGender: 'FEMALE' },
+          voice: { languageCode, ssmlGender },
           audioConfig: { audioEncoding: 'MP3' },
           enableTimePointing: ['SSML_MARK']
         });
@@ -713,7 +714,7 @@ app.post('/api/video/generate',
           const languageCode = voice_language || 'en-IN';
           [ttsResponse] = await client.synthesizeSpeech({
             input: { text: voiceover_script },
-            voice: { languageCode, ssmlGender: 'FEMALE' },
+            voice: { languageCode, ssmlGender },
             audioConfig: { audioEncoding: 'MP3' }
           });
         } catch (fallbackErr) {
