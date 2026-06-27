@@ -686,19 +686,40 @@ app.post('/api/video/generate',
 
       fs.mkdirSync(workDir, { recursive: true });
 
-      // 1. Generate voiceover audio via Google Cloud TTS
+      // 1. Generate voiceover audio via Google Cloud TTS — using SSML <mark>
+      //    tags before each sentence so Google returns the EXACT time each
+      //    sentence starts being spoken. This gives real, measured subtitle
+      //    timing instead of an evenly-divided estimate.
+      const sentences = splitIntoSentences(voiceover_script);
+      const ssml = buildMarkedSsml(sentences);
+
       let ttsResponse;
       try {
         const client = getTtsClient();
         const languageCode = voice_language || 'en-IN';
         [ttsResponse] = await client.synthesizeSpeech({
-          input: { text: voiceover_script },
+          input: { ssml },
           voice: { languageCode, ssmlGender: 'FEMALE' },
-          audioConfig: { audioEncoding: 'MP3' }
+          audioConfig: { audioEncoding: 'MP3' },
+          enableTimePointing: ['SSML_MARK']
         });
       } catch (ttsErr) {
-        console.error('Google TTS error:', ttsErr);
-        throw new Error('Voiceover generation failed. Check the Google Cloud credentials and that the Text-to-Speech API is enabled.');
+        console.error('Google TTS error (with SSML marks):', ttsErr);
+        // Fallback: some languages/voices don't support SSML marks reliably.
+        // Retry with plain text so voiceover generation still succeeds —
+        // subtitles will fall back to the even-split estimate in this case.
+        try {
+          const client = getTtsClient();
+          const languageCode = voice_language || 'en-IN';
+          [ttsResponse] = await client.synthesizeSpeech({
+            input: { text: voiceover_script },
+            voice: { languageCode, ssmlGender: 'FEMALE' },
+            audioConfig: { audioEncoding: 'MP3' }
+          });
+        } catch (fallbackErr) {
+          console.error('Google TTS fallback error:', fallbackErr);
+          throw new Error('Voiceover generation failed. Check the Google Cloud credentials and that the Text-to-Speech API is enabled.');
+        }
       }
       const voicePath = path.join(workDir, 'voice.mp3');
       fs.writeFileSync(voicePath, ttsResponse.audioContent, 'binary');
@@ -708,11 +729,15 @@ app.post('/api/video/generate',
       const voiceDuration = await getAudioDuration(voicePath);
       const perImageDuration = Math.max(voiceDuration / screenshots.length, 1.5);
 
-      // 3. Build a simple subtitle file (.srt), splitting the script evenly
-      //    across the voiceover's duration — a readable approximation, not
-      //    word-perfect timing.
+      // 3. Build the subtitle file (.srt). If Google returned real timepoints
+      //    for our sentence marks, use those exact times — otherwise fall
+      //    back to the even-split estimate.
       const srtPath = path.join(workDir, 'subs.srt');
-      writeSrtFile(srtPath, voiceover_script, voiceDuration);
+      if (ttsResponse.timepoints && ttsResponse.timepoints.length > 0) {
+        writeSrtFileFromTimepoints(srtPath, sentences, ttsResponse.timepoints, voiceDuration);
+      } else {
+        writeSrtFile(srtPath, voiceover_script, voiceDuration);
+      }
       tempFiles.push(srtPath);
 
       // 4. Build the FFmpeg input list (each screenshot shown for perImageDuration)
@@ -875,6 +900,66 @@ function formatSrtTime(seconds) {
   const ms = Math.floor((seconds % 1) * 1000);
   const pad = (n, len = 2) => String(n).padStart(len, '0');
   return `${pad(h)}:${pad(m)}:${pad(s)},${pad(ms, 3)}`;
+}
+
+// Shared sentence splitter — same logic writeSrtFile already used, pulled
+// out so the SSML-marking path and the fallback path stay consistent.
+function splitIntoSentences(script) {
+  const sentences = script
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[.!?])\s+/)
+    .filter(s => s.trim().length > 0);
+  return sentences.length > 0 ? sentences : [script];
+}
+
+// Escapes the handful of characters SSML/XML treats specially, so sentence
+// text can't accidentally break the markup we're wrapping it in.
+function escapeSsml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Builds an SSML document with a named <mark> immediately before each
+// sentence. Combined with enableTimePointing: ['SSML_MARK'] on the TTS
+// request, Google returns the exact second each mark was reached in the
+// generated audio — i.e. exactly when each sentence starts being spoken.
+function buildMarkedSsml(sentences) {
+  const body = sentences
+    .map((sentence, i) => `<mark name="s${i}"/>${escapeSsml(sentence.trim())}`)
+    .join(' ');
+  return `<speak>${body}</speak>`;
+}
+
+// Writes subtitles using REAL measured timepoints from Google TTS rather
+// than an even split — each sentence's subtitle now starts exactly when
+// that sentence actually begins in the audio.
+function writeSrtFileFromTimepoints(srtPath, sentences, timepoints, totalDuration) {
+  // timepoints come back as [{ markName: 's0', timeSeconds: 0.42 }, ...] —
+  // map mark name -> time, then look each sentence's start time up by index.
+  const timeByMark = {};
+  timepoints.forEach(tp => { timeByMark[tp.markName] = tp.timeSeconds; });
+
+  let srt = '';
+  sentences.forEach((sentence, i) => {
+    const start = timeByMark[`s${i}`] !== undefined ? timeByMark[`s${i}`] : null;
+    if (start === null) return; // skip if Google didn't return this mark for some reason
+
+    const nextStart = timeByMark[`s${i + 1}`] !== undefined ? timeByMark[`s${i + 1}`] : totalDuration;
+    const end = Math.max(nextStart, start + 0.5); // guard against zero/negative duration
+
+    srt += `${i + 1}\n${formatSrtTime(start)} --> ${formatSrtTime(end)}\n${sentence.trim()}\n\n`;
+  });
+
+  // If for some reason nothing got written (e.g. all marks missing),
+  // fall back to the even-split version so subtitles still appear.
+  if (!srt.trim()) {
+    writeSrtFile(srtPath, sentences.join(' '), totalDuration);
+    return;
+  }
+
+  fs.writeFileSync(srtPath, srt);
 }
 
 
