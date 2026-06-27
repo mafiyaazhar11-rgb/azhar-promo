@@ -569,13 +569,24 @@
         <label>Voiceover script (editable)</label>
         <textarea id="videoScript" style="min-height:100px;"></textarea>
 
-        <label>Voice language</label>
-        <select id="videoLanguage">
-          <option value="en-IN">English (India)</option>
-          <option value="ta-IN">Tamil</option>
-          <option value="ml-IN">Malayalam</option>
-          <option value="hi-IN">Hindi</option>
-        </select>
+        <div class="row2">
+          <div>
+            <label>Voice language</label>
+            <select id="videoLanguage">
+              <option value="en-IN">English (India)</option>
+              <option value="ta-IN">Tamil</option>
+              <option value="ml-IN">Malayalam</option>
+              <option value="hi-IN">Hindi</option>
+            </select>
+          </div>
+          <div>
+            <label>Voice gender</label>
+            <select id="videoVoiceGender">
+              <option value="FEMALE">Female</option>
+              <option value="MALE">Male</option>
+            </select>
+          </div>
+        </div>
 
         <label>Screenshots (in order — tap each to crop out the status bar)</label>
         <input type="file" id="screenshotInput" accept="image/*" multiple>
@@ -1277,6 +1288,7 @@ document.getElementById('generateVideoBtn').addEventListener('click', async () =
     const formData = new FormData();
     formData.append('voiceover_script', script);
     formData.append('voice_language', document.getElementById('videoLanguage').value);
+    formData.append('voice_gender', document.getElementById('videoVoiceGender').value);
 
     for (const shot of uploadedScreenshots) {
       const blob = await getCroppedBlob(shot);
