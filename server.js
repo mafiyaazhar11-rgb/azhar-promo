@@ -263,7 +263,8 @@ app.post('/api/generate', requireAuth, async (req, res) => {
     const platformStyleNotes = {
       facebook: 'Slightly longer, conversational, can include a question to encourage comments.',
       instagram: 'Short, punchy, emoji-friendly, strong hashtag set at the end.',
-      tiktok: 'Hook in the first line, written like a script for a short video with energy and a clear call to action.'
+      tiktok: 'Hook in the first line, written like a script for a short video with energy and a clear call to action.',
+      youtube: 'Written for YouTube — title should be search-friendly and clear, description can be a bit longer with keywords, good for both Shorts and regular video framing.'
     };
 
     const contentTypeNotes = {
@@ -272,7 +273,8 @@ app.post('/api/generate', requireAuth, async (req, res) => {
       pricing_offer: 'Lead with the value, mention price clearly, include urgency without being pushy.',
       daily_tip: 'Give a genuinely useful tip related to the product\'s subject area, with a soft mention of the product.',
       whatsapp_group: 'Written for sharing directly into a parent WhatsApp group — friendly, informal, easy to forward, not overly salesy, can include 1-2 emojis.',
-      poster_text: 'Written for a printable/shareable poster image — needs a short punchy headline, one supporting subheadline, and one clear call-to-action line. Keep each part very short.'
+      poster_text: 'Written for a printable/shareable poster image — needs a short punchy headline, one supporting subheadline, and one clear call-to-action line. Keep each part very short.',
+      youtube_shorts: 'Written for a YouTube Short — needs a strong hook in the first 2 seconds, a punchy on-screen title (under 60 characters), and a short description with relevant keywords for YouTube search. The voiceover script and shot list should follow the same 0-30 sec format as other short-form video.'
     };
 
     const audienceNotes = {
